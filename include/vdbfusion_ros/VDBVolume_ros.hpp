@@ -33,16 +33,17 @@ namespace vdbfusion {
 class VDBVolumeNode {
 public:
     VDBVolumeNode();
-
+    bool saveVDBVolume(vdbfusion_ros::save_vdb_volume::Request& path,
+                       vdbfusion_ros::save_vdb_volume::Response& response);
 private:
     VDBVolume InitVDBVolume();
     void Integrate(const sensor_msgs::PointCloud2& pcd);
-    bool saveVDBVolume(vdbfusion_ros::save_vdb_volume::Request& path,
-                       vdbfusion_ros::save_vdb_volume::Response& response);
+
 
 private:
     ros::NodeHandle nh_;
     ros::Subscriber sub_;
+    ros::Publisher mesh_geometry_pub_;
     ros::ServiceServer srv_;
     Transform tf_;
     ros::Duration timestamp_tolerance_;
@@ -59,5 +60,10 @@ private:
     // Triangle Mesh Extraction
     bool fill_holes_;
     float min_weight_;
+
+public:
+    // mesh pub and viz
+    float update_rate_;
+    std::string save_path_;
 };
 }  // namespace vdbfusion

@@ -35,6 +35,11 @@
 #include "igl/write_triangle_mesh.h"
 #include "openvdb/openvdb.h"
 
+#include <geometry_msgs/Point.h>
+#include <mesh_msgs/MeshGeometryStamped.h>
+#include <mesh_msgs/MeshGeometry.h>
+#include <mesh_msgs/MeshTriangleIndices.h>
+
 namespace {
 std::vector<Eigen::Vector3d> pcl2SensorMsgToEigen(const sensor_msgs::PointCloud2& pcl2) {
     std::vector<Eigen::Vector3d> points;
@@ -84,6 +89,9 @@ vdbfusion::VDBVolumeNode::VDBVolumeNode() : vdb_volume_(InitVDBVolume()), tf_(nh
     nh_.getParam("/fill_holes", fill_holes_);
     nh_.getParam("/min_weight", min_weight_);
 
+    nh_.getParam("/update_rate", update_rate_);
+    nh_.getParam("/save_path", save_path_);
+
     int32_t tol;
     nh_.getParam("/timestamp_tolerance_ns", tol);
     timestamp_tolerance_ = ros::Duration(0, tol);
@@ -92,6 +100,7 @@ vdbfusion::VDBVolumeNode::VDBVolumeNode() : vdb_volume_(InitVDBVolume()), tf_(nh
 
     sub_ = nh_.subscribe(pcl_topic, queue_size, &vdbfusion::VDBVolumeNode::Integrate, this);
     srv_ = nh_.advertiseService("/save_vdb_volume", &vdbfusion::VDBVolumeNode::saveVDBVolume, this);
+    mesh_geometry_pub_ = nh_.advertise<mesh_msgs::MeshGeometryStamped>("mesh", 1, true);
 
     ROS_INFO("Use '/save_vdb_volume' service to save the integrated volume");
 }
@@ -128,22 +137,60 @@ bool vdbfusion::VDBVolumeNode::saveVDBVolume(vdbfusion_ros::save_vdb_volume::Req
     auto [vertices, triangles] =
         this->vdb_volume_.ExtractTriangleMesh(this->fill_holes_, this->min_weight_);
 
+    // prepare mesh geometry message
+    mesh_msgs::MeshGeometryStamped mesh_msg;
+
     Eigen::MatrixXd V(vertices.size(), 3);
     for (size_t i = 0; i < vertices.size(); i++) {
         V.row(i) = Eigen::VectorXd::Map(&vertices[i][0], vertices[i].size());
+
+        // populate mesh message vertix data
+        geometry_msgs::Point p;
+        p.x = vertices[i][0];
+        p.y = vertices[i][1];
+        p.z = vertices[i][2];
+        mesh_msg.mesh_geometry.vertices.push_back(p);
     }
 
     Eigen::MatrixXi F(triangles.size(), 3);
     for (size_t i = 0; i < triangles.size(); i++) {
         F.row(i) = Eigen::VectorXi::Map(&triangles[i][0], triangles[i].size());
+        // populate mesh message face data
+        mesh_msgs::MeshTriangleIndices indices;
+        indices.vertex_indices[0] = triangles[i][0];
+        indices.vertex_indices[1] = triangles[i][1];
+        indices.vertex_indices[2] = triangles[i][2];
+        mesh_msg.mesh_geometry.faces.push_back(indices);
     }
     igl::write_triangle_mesh(volume_name + "_mesh.ply", V, F, igl::FileEncoding::Binary);
     ROS_INFO("Done saving the mesh and VDB grid files");
+
+    // chicken out if there are no vertices
+    if (vertices.size() > 0)
+    {
+        ROS_INFO("Publishing mesh geometry");
+        mesh_msg.uuid = "uuid";
+        mesh_msg.header.frame_id = "map";
+        mesh_msg.header.stamp = ros::Time::now();
+        mesh_geometry_pub_.publish(mesh_msg);
+    }
     return true;
 }
 
 int main(int argc, char** argv) {
     ros::init(argc, argv, "vdbfusion_rosnode");
     vdbfusion::VDBVolumeNode vdb_volume_node;
-    ros::spin();
+
+    ros::Rate loop_rate(vdb_volume_node.update_rate_);
+    vdbfusion_ros::save_vdb_volume::Request path;
+    vdbfusion_ros::save_vdb_volume::Response response;
+    path.path = vdb_volume_node.save_path_;
+    while(ros::ok())
+    {
+        loop_rate.sleep();
+        vdb_volume_node.saveVDBVolume(path, response);
+        ros::spinOnce();
+    }
+    
+    return 0;
 }

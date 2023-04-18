@@ -30,6 +30,12 @@ target_include_directories(transforms PRIVATE
 )
 
 add_executable(${PROJECT_NAME}_node VDBVolume_ros.cpp)
+
+add_dependencies(${PROJECT_NAME}_node
+  ${mesh_msgs_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS}
+)
+
 target_link_libraries(${PROJECT_NAME}_node PUBLIC
   ${catkin_LIBRARIES}
   VDBFusion::vdbfusion
