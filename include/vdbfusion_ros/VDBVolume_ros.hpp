@@ -38,7 +38,7 @@ public:
 private:
     VDBVolume InitVDBVolume();
     void Integrate(const sensor_msgs::PointCloud2& pcd);
-
+    void TimerCallback(const ros::TimerEvent&);
 
 private:
     ros::NodeHandle nh_;
@@ -47,7 +47,8 @@ private:
     ros::ServiceServer srv_;
     Transform tf_;
     ros::Duration timestamp_tolerance_;
-
+    ros::Timer serviceTimer;
+    
 private:
     VDBVolume vdb_volume_;
 
@@ -63,7 +64,7 @@ private:
 
 public:
     // mesh pub and viz
-    float update_rate_;
+    float save_publish_wait_time;
     std::string save_path_;
 };
 }  // namespace vdbfusion

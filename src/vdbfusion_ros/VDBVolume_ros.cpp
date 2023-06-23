@@ -89,7 +89,7 @@ vdbfusion::VDBVolumeNode::VDBVolumeNode() : vdb_volume_(InitVDBVolume()), tf_(nh
     nh_.getParam("/fill_holes", fill_holes_);
     nh_.getParam("/min_weight", min_weight_);
 
-    nh_.getParam("/update_rate", update_rate_);
+    nh_.getParam("/save_publish_wait_time", save_publish_wait_time);
     nh_.getParam("/save_path", save_path_);
 
     int32_t tol;
@@ -102,7 +102,16 @@ vdbfusion::VDBVolumeNode::VDBVolumeNode() : vdb_volume_(InitVDBVolume()), tf_(nh
     srv_ = nh_.advertiseService("/save_vdb_volume", &vdbfusion::VDBVolumeNode::saveVDBVolume, this);
     mesh_geometry_pub_ = nh_.advertise<mesh_msgs::MeshGeometryStamped>("mesh", 1, true);
 
-    ROS_INFO("Use '/save_vdb_volume' service to save the integrated volume");
+    // check if we are supposed to auto save and publish
+    if (save_publish_wait_time > 0)
+    {
+        ROS_INFO("Setting up timer callback every %f seconds to auto save and publish the integrated volume.", save_publish_wait_time);
+        serviceTimer = nh_.createTimer(ros::Duration(save_publish_wait_time), &vdbfusion::VDBVolumeNode::TimerCallback, this);
+    }
+    else
+    {
+        ROS_INFO("save_publish_wait_time not set. Use '/save_vdb_volume' service to save the integrated volume.");
+    }
 }
 
 void vdbfusion::VDBVolumeNode::Integrate(const sensor_msgs::PointCloud2& pcd) {
@@ -177,20 +186,19 @@ bool vdbfusion::VDBVolumeNode::saveVDBVolume(vdbfusion_ros::save_vdb_volume::Req
     return true;
 }
 
+void vdbfusion::VDBVolumeNode::TimerCallback(const ros::TimerEvent&)
+{
+    ROS_INFO("Auto invoking service call with save path %s", this->save_path_);
+    // call service to save and publish
+    vdbfusion_ros::save_vdb_volume::Request req;
+    vdbfusion_ros::save_vdb_volume::Response res;
+    req.path = this->save_path_;
+    this->saveVDBVolume(req, res);
+}
+
 int main(int argc, char** argv) {
     ros::init(argc, argv, "vdbfusion_rosnode");
     vdbfusion::VDBVolumeNode vdb_volume_node;
-
-    ros::Rate loop_rate(vdb_volume_node.update_rate_);
-    vdbfusion_ros::save_vdb_volume::Request path;
-    vdbfusion_ros::save_vdb_volume::Response response;
-    path.path = vdb_volume_node.save_path_;
-    while(ros::ok())
-    {
-        loop_rate.sleep();
-        vdb_volume_node.saveVDBVolume(path, response);
-        ros::spinOnce();
-    }
-    
+    ros::spin();
     return 0;
 }
